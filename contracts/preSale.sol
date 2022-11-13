@@ -51,8 +51,6 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 import "./OwnerWithdrawable.sol";
 
-import "hardhat/console.sol";
-
 contract Presale is OwnerWithdrawable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20Metadata;
@@ -118,7 +116,6 @@ contract Presale is OwnerWithdrawable {
 
     function setRoundDetails(uint256[] memory _roundID, uint256[] memory _vestingPercent, 
     uint256[] memory _lockingPeriod)internal{
-        // console.log(_vestingPercent[0]);
         require(_roundID.length == _vestingPercent.length, "Redux: Length mismatch");
         require(_lockingPeriod.length == _vestingPercent.length, "Redux: Length mismatch");
 
@@ -186,7 +183,6 @@ contract Presale is OwnerWithdrawable {
 
           }
           buyersAmount[msg.sender].tokensPerRound[currentRound] += saleTokenAmt;
-        //   console.log(buyersAmount[msg.sender].tokensPerRound[currentRound], "tokens sold");
         }
     }
 
@@ -215,8 +211,6 @@ contract Presale is OwnerWithdrawable {
 
         for(uint256 i = 0; i<6; i++){
             tokensClaimed += buyersAmount[_user].tokensClaimed[i];
-            console.log(i, "round");
-            console.log(tokensClaimed, "claimed tokens");
         }
         return tokensClaimed;
     }
@@ -248,10 +242,6 @@ contract Presale is OwnerWithdrawable {
                 buyersAmount[user].tokensClaimed[round] += availableAllocation > availableTokens ? availableTokens : availableAllocation;
                 buyersAmount[user].monthlyVestingClaimed[round] = timeElapsed.div(30*24*60*60);
 
-                console.log(round, "Round");
-                console.log(tokenPerRound, "Tokens per round");
-                console.log(buyersAmount[user].tokensClaimed[round], "claimed tokens");
-
             }
         }
 
@@ -274,9 +264,6 @@ contract Presale is OwnerWithdrawable {
             tokenPerRound = buyersAmount[user].tokensPerRound[round];
 
             if(timeElapsed.div(30*24*60*60) >= roundDetails[round].lockingPeriod){
-
-                console.log(timeElapsed.div(30*24*60*60), "time elapsed");
-                console.log(roundDetails[round].lockingPeriod, "lockingPeriod");
                 boost = timeElapsed.div(30*24*60*60).sub(buyersAmount[user].monthlyVestingClaimed[round]);
                 availableAllocation = tokenPerRound.mul(boost).mul(roundDetails[round].vestingPercent).div(100);
                 availableTokens = tokenPerRound.sub(buyersAmount[user].tokensClaimed[round]);
