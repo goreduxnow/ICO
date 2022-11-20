@@ -52,7 +52,6 @@ import "./OwnerWithdrawable.sol";
 
 contract Presale is OwnerWithdrawable, ReentrancyGuard{
     using SafeERC20 for IERC20Metadata;
-    using SafeMath for uint256;
 
     uint256 public preSaleStartTime;
     uint256 public preSaleEndTime;
@@ -64,6 +63,8 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
 
     address public immutable saleToken;
 
+    //vestingPercent: Vesting percent for the allocated tokens in a round
+    //lockingPeriod: locking period for the allocated tokens in a round
     struct VestingDetails{
         uint256 vestingPercent;
         uint256 lockingPeriod;
@@ -73,7 +74,12 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
 
     mapping (uint256 => VestingDetails) public roundDetails;
 
-    //0: PS1, 1: PS2, 2:INNOVATION, 3: TEAM, 4:MARKETING, 5: SEED
+    //totalAmount: total tokens allocated in all the rounds
+    //array storing the rounds participated by a user
+    //Rounds::  0: PS1, 1: PS2, 2:INNOVATION, 3: TEAM, 4:MARKETING, 5: SEED
+    //tokensPerRound: mapping to store the tokens allocated to the user in the specific round
+    //monthlyVestingClaimed: stores the latest month when a user withdrew tokens in the specific round
+    //tokensClaimed: stores the number of tokens claimed by the user in the specific round
     struct BuyerTokenDetails {
         uint256 totalAmount;
         uint256 []roundsParticipated;
@@ -116,9 +122,11 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
 
     function setRoundDetails(uint256[] memory _roundID, uint256[] memory _vestingPercent, 
     uint256[] memory _lockingPeriod)internal{
+        
         require(_roundID.length == _vestingPercent.length, "Redux: Length mismatch");
         require(_lockingPeriod.length == _vestingPercent.length, "Redux: Length mismatch");
         uint256 length = _roundID.length;
+        // VestingDetails storage vestingInfo = 
         for(uint256 i = 0; i < length; i++){
             roundDetails[_roundID[i]] = VestingDetails(_vestingPercent[i], _lockingPeriod[i]);
         }
@@ -155,34 +163,34 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         view
         returns (uint256)
     {
-        return amount.mul(10**saleTokenDec).div(rate);
+        return amount*(10**saleTokenDec)/rate;
     }
 
 
     function buyToken(bool _isInnovation) external payable saleDuration{
         uint256 saleTokenAmt;
 
-        saleTokenAmt = (msg.value).mul(10**saleTokenDec).div(rate);
+        saleTokenAmt = (msg.value)*(10**saleTokenDec)/rate;
         require((totalTokensSold + saleTokenAmt) < totalTokensforSale, "PreSale: Total Token Sale Reached!");
 
         // Update Stats
-        totalTokensSold = totalTokensSold.add(saleTokenAmt);
-
-        buyersAmount[msg.sender].totalAmount += saleTokenAmt;
+        totalTokensSold += saleTokenAmt;
+        BuyerTokenDetails storage buyerDetails = buyersAmount[msg.sender];        
+        buyerDetails.totalAmount += saleTokenAmt;
         if(_isInnovation) {
-          if(buyersAmount[msg.sender].tokensPerRound[2] == 0){
-              buyersAmount[msg.sender].roundsParticipated.push(2);
-              buyersAmount[msg.sender].monthlyVestingClaimed[2] = roundDetails[2].lockingPeriod-1;
+          if(buyerDetails.tokensPerRound[2] == 0){
+              buyerDetails.roundsParticipated.push(2);
+              buyerDetails.monthlyVestingClaimed[2] = roundDetails[2].lockingPeriod-1;
           }
-          buyersAmount[msg.sender].tokensPerRound[2] += saleTokenAmt;
+          buyerDetails.tokensPerRound[2] += saleTokenAmt;
         }
         else {
-          if(buyersAmount[msg.sender].tokensPerRound[currentRound] == 0){
-              buyersAmount[msg.sender].roundsParticipated.push(currentRound);
-              buyersAmount[msg.sender].monthlyVestingClaimed[currentRound] = roundDetails[currentRound].lockingPeriod-1;
+          if(buyerDetails.tokensPerRound[currentRound] == 0){
+              buyerDetails.roundsParticipated.push(currentRound);
+              buyerDetails.monthlyVestingClaimed[currentRound] = roundDetails[currentRound].lockingPeriod-1;
 
           }
-          buyersAmount[msg.sender].tokensPerRound[currentRound] += saleTokenAmt;
+          buyerDetails.tokensPerRound[currentRound] += saleTokenAmt;
         }
     }
 
@@ -220,26 +228,27 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         address user = msg.sender;
         require(tokensforWithdraw > 0, "Redux Token Vesting: No $REDUX Tokens available for claim!");
         
-        uint256 timeElapsed = block.timestamp.sub(vestingBeginTime);
+        uint256 timeElapsed = (block.timestamp)-vestingBeginTime;
         uint256 boost;
         uint256 availableAllocation;
         uint256 availableTokens;
 
         uint256 round;
         uint256 tokenPerRound;
-        uint256 length = buyersAmount[user].roundsParticipated.length;
+        BuyerTokenDetails storage buyerDetails = buyersAmount[user];        
+        uint256 length = buyerDetails.roundsParticipated.length;
         for(uint256 i = 0; i < length; i++){
-            round = buyersAmount[user].roundsParticipated[i];
-            tokenPerRound = buyersAmount[user].tokensPerRound[round];
+            round = buyerDetails.roundsParticipated[i];
+            tokenPerRound = buyerDetails.tokensPerRound[round];
 
-            if(timeElapsed.div(30*24*60*60) >= roundDetails[round].lockingPeriod){
+            if(timeElapsed/(30*24*60*60) >= roundDetails[round].lockingPeriod){
 
-                boost = timeElapsed.div(30*24*60*60).sub(buyersAmount[user].monthlyVestingClaimed[round]);
-                availableAllocation = tokenPerRound.mul(boost).mul(roundDetails[round].vestingPercent).div(100);
-                availableTokens = tokenPerRound.sub(buyersAmount[user].tokensClaimed[round]);
+                boost = (timeElapsed/(30*24*60*60))-(buyerDetails.monthlyVestingClaimed[round]);
+                availableAllocation = tokenPerRound*boost*(roundDetails[round].vestingPercent)/100;
+                availableTokens = tokenPerRound-(buyerDetails.tokensClaimed[round]);
     
-                buyersAmount[user].tokensClaimed[round] += availableAllocation > availableTokens ? availableTokens : availableAllocation;
-                buyersAmount[user].monthlyVestingClaimed[round] = timeElapsed.div(30*24*60*60);
+                buyerDetails.tokensClaimed[round] += availableAllocation > availableTokens ? availableTokens : availableAllocation;
+                buyerDetails.monthlyVestingClaimed[round] = timeElapsed/(30*24*60*60);
 
             }
         }
@@ -248,10 +257,11 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
 
     }
 
+    //function to get allocation available for withdraw
     function getAllocation(address user) public view returns(uint256){
 
         require(vestingBeginTime != 0, "Redux: Vesting hasn't started");        
-        uint256 timeElapsed = block.timestamp.sub(vestingBeginTime);
+        uint256 timeElapsed = (block.timestamp)-vestingBeginTime;
         uint256 boost;
         uint256 availableAllocation;
         uint256 availableTokens;
@@ -259,21 +269,22 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
 
         uint256 round;
         uint256 tokenPerRound;
-
-        for(uint256 i = 0; i < buyersAmount[user].roundsParticipated.length; i++){
-            round = buyersAmount[user].roundsParticipated[i];
-            tokenPerRound = buyersAmount[user].tokensPerRound[round];
-
-            if(timeElapsed.div(30*24*60*60) >= roundDetails[round].lockingPeriod){
-
-                boost = timeElapsed.div(30*24*60*60).sub(buyersAmount[user].monthlyVestingClaimed[round]);
-                availableAllocation = tokenPerRound.mul(boost).mul(roundDetails[round].vestingPercent).div(100);
-                availableTokens = tokenPerRound.sub(buyersAmount[user].tokensClaimed[round]);
+        BuyerTokenDetails storage buyerDetails = buyersAmount[user];        
+        
+        for(uint256 i = 0; i < buyerDetails.roundsParticipated.length; i++){
+            round = buyerDetails.roundsParticipated[i];
+            tokenPerRound = buyerDetails.tokensPerRound[round];
+            //check if lockingPeriod is inactive
+            if(timeElapsed/(30*24*60*60) >= roundDetails[round].lockingPeriod){
+                
+                //boost: months available since last withdraw
+                boost = (timeElapsed/(30*24*60*60))-(buyerDetails.monthlyVestingClaimed[round]);
+                availableAllocation = tokenPerRound*boost*(roundDetails[round].vestingPercent)/100;
+                availableTokens = tokenPerRound-(buyerDetails.tokensClaimed[round]);
                 tokensAlloted += availableAllocation > availableTokens ? availableTokens : availableAllocation;
 
             }
         }
-        
         return tokensAlloted;
     }
 
@@ -284,12 +295,13 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         require(_roundID >2, "Redux: Id should be greater than 1");
         uint256 length = _user.length;
         for(uint256 i = 0; i < length; i+=1){
-            buyersAmount[_user[i]].totalAmount += _amount[i];
-            if(buyersAmount[_user[i]].tokensPerRound[_roundID] == 0){
-                buyersAmount[_user[i]].roundsParticipated.push(_roundID);
-                buyersAmount[_user[i]].monthlyVestingClaimed[_roundID] = roundDetails[_roundID].lockingPeriod-1;
+        BuyerTokenDetails storage buyerDetails = buyersAmount[_user[i]];        
+            buyerDetails.totalAmount += _amount[i];
+            if(buyerDetails.tokensPerRound[_roundID] == 0){
+                buyerDetails.roundsParticipated.push(_roundID);
+                buyerDetails.monthlyVestingClaimed[_roundID] = roundDetails[_roundID].lockingPeriod-1;
             }
-            buyersAmount[_user[i]].tokensPerRound[_roundID] += _amount[i];
+            buyerDetails.tokensPerRound[_roundID] += _amount[i];
             totalTokens += _amount[i];
         }
         IERC20Metadata(saleToken).safeTransferFrom(msg.sender, address(this), totalTokens);
