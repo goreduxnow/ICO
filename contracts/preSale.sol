@@ -47,13 +47,12 @@ pragma solidity 0.8.9;
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./OwnerWithdrawable.sol";
 
-contract Presale is OwnerWithdrawable {
-    using SafeMath for uint256;
+contract Presale is OwnerWithdrawable, ReentrancyGuard{
     using SafeERC20 for IERC20Metadata;
+    using SafeMath for uint256;
 
     uint256 public preSaleStartTime;
     uint256 public preSaleEndTime;
@@ -63,7 +62,7 @@ contract Presale is OwnerWithdrawable {
     uint256 public totalTokensSold;
     uint256 public saleTokenDec;
 
-    address immutable saleToken;
+    address public immutable saleToken;
 
     struct VestingDetails{
         uint256 vestingPercent;
@@ -85,7 +84,8 @@ contract Presale is OwnerWithdrawable {
 
     mapping(address => BuyerTokenDetails) public buyersAmount;
 
-    constructor(address _saleTokenAddress, uint256[] memory _roundID, uint256[] memory _vestingPercent, uint256[] memory _lockingPeriod){
+    constructor(address _saleTokenAddress, uint256[] memory _roundID, uint256[] memory _vestingPercent, uint256[] memory _lockingPeriod) ReentrancyGuard(){
+        require(_saleTokenAddress != address(0), "Presale: Invalid Address");
         saleToken = _saleTokenAddress;
         saleTokenDec = IERC20Metadata(saleToken).decimals();
         setRoundDetails(_roundID, _vestingPercent, _lockingPeriod);
@@ -118,8 +118,8 @@ contract Presale is OwnerWithdrawable {
     uint256[] memory _lockingPeriod)internal{
         require(_roundID.length == _vestingPercent.length, "Redux: Length mismatch");
         require(_lockingPeriod.length == _vestingPercent.length, "Redux: Length mismatch");
-
-        for(uint256 i = 0; i < _roundID.length; i++){
+        uint256 length = _roundID.length;
+        for(uint256 i = 0; i < length; i++){
             roundDetails[_roundID[i]] = VestingDetails(_vestingPercent[i], _lockingPeriod[i]);
         }
     }
@@ -151,7 +151,7 @@ contract Presale is OwnerWithdrawable {
 
     // Public view function to calculate amount of sale tokens returned if you buy using "amount" of "token"
     function getTokenAmount(uint256 amount)
-        public
+        external
         view
         returns (uint256)
     {
@@ -186,27 +186,27 @@ contract Presale is OwnerWithdrawable {
         }
     }
 
-    function getTokensBought(address _user)public view returns(uint256){
+    function getTokensBought(address _user)external view returns(uint256){
         return buyersAmount[_user].totalAmount;
     }
 
-    function getRoundsParticipated(address _user)public view returns(uint256[] memory)
+    function getRoundsParticipated(address _user)external view returns(uint256[] memory)
     {
         return buyersAmount[_user].roundsParticipated;
     }
 
-    function getTokensPerRound(address _user, uint256 _roundID)public view returns(uint256){
+    function getTokensPerRound(address _user, uint256 _roundID)external view returns(uint256){
         return buyersAmount[_user].tokensPerRound[_roundID];
     }
 
 
-    function getClaimedTokensPerRound(address _user, uint256 _roundID)public view returns(uint256){
+    function getClaimedTokensPerRound(address _user, uint256 _roundID)external view returns(uint256){
         return buyersAmount[_user].tokensClaimed[_roundID];
     }
-    function getMonthlyVestingClaimed(address _user, uint256 _roundID)public view returns(uint256){
+    function getMonthlyVestingClaimed(address _user, uint256 _roundID)external view returns(uint256){
         return buyersAmount[_user].monthlyVestingClaimed[_roundID];
     }
-    function getTotalClaimedTokens(address _user)public view returns(uint256){
+    function getTotalClaimedTokens(address _user)external view returns(uint256){
         uint256 tokensClaimed;
 
         for(uint256 i = 0; i<6; i++){
@@ -215,11 +215,10 @@ contract Presale is OwnerWithdrawable {
         return tokensClaimed;
     }
 
-    function withdrawToken() external{
+    function withdrawToken() external nonReentrant{
         uint256 tokensforWithdraw = getAllocation(msg.sender);
         address user = msg.sender;
         require(tokensforWithdraw > 0, "Redux Token Vesting: No $REDUX Tokens available for claim!");
-        IERC20Metadata(saleToken).safeTransfer(msg.sender, tokensforWithdraw);
         
         uint256 timeElapsed = block.timestamp.sub(vestingBeginTime);
         uint256 boost;
@@ -228,8 +227,8 @@ contract Presale is OwnerWithdrawable {
 
         uint256 round;
         uint256 tokenPerRound;
-
-        for(uint256 i = 0; i < buyersAmount[user].roundsParticipated.length; i++){
+        uint256 length = buyersAmount[user].roundsParticipated.length;
+        for(uint256 i = 0; i < length; i++){
             round = buyersAmount[user].roundsParticipated[i];
             tokenPerRound = buyersAmount[user].tokensPerRound[round];
 
@@ -244,6 +243,8 @@ contract Presale is OwnerWithdrawable {
 
             }
         }
+
+        IERC20Metadata(saleToken).safeTransfer(msg.sender, tokensforWithdraw);
 
     }
 
@@ -264,6 +265,7 @@ contract Presale is OwnerWithdrawable {
             tokenPerRound = buyersAmount[user].tokensPerRound[round];
 
             if(timeElapsed.div(30*24*60*60) >= roundDetails[round].lockingPeriod){
+
                 boost = timeElapsed.div(30*24*60*60).sub(buyersAmount[user].monthlyVestingClaimed[round]);
                 availableAllocation = tokenPerRound.mul(boost).mul(roundDetails[round].vestingPercent).div(100);
                 availableTokens = tokenPerRound.sub(buyersAmount[user].tokensClaimed[round]);
@@ -280,7 +282,8 @@ contract Presale is OwnerWithdrawable {
         uint256 totalTokens;
         require(_user.length == _amount.length, "Redux Token Vesting: user & amount arrays length mismatch");
         require(_roundID >2, "Redux: Id should be greater than 1");
-        for(uint256 i = 0; i < _user.length; i+=1){
+        uint256 length = _user.length;
+        for(uint256 i = 0; i < length; i+=1){
             buyersAmount[_user[i]].totalAmount += _amount[i];
             if(buyersAmount[_user[i]].tokensPerRound[_roundID] == 0){
                 buyersAmount[_user[i]].roundsParticipated.push(_roundID);
