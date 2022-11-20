@@ -366,5 +366,17 @@ describe("Redux_ICO", function () {
 
     });
 
+    it("Should withdraw the pending sale tokens", async function(){
+
+        bal = await mytoken.balanceOf(presale.address)
+        ownerBal = await mytoken.balanceOf(accounts[0].address)
+
+        await presale.withdraw(mytoken.address, bal)
+        bal2 = await mytoken.balanceOf(presale.address)
+        ownerBal2 = await mytoken.balanceOf(accounts[0].address)
+        expect(bal-bal2).to.be.closeTo(ownerBal2-ownerBal, 10**12)
+        
+    })
+
 
 });
