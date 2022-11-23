@@ -59,6 +59,7 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
     uint256 public rate;
     uint256 public vestingBeginTime;
     uint256 public totalTokensSold;
+    uint256 public totalTokensAlloc;
     uint256 public saleTokenDec;
 
     address public immutable saleToken;
@@ -104,14 +105,14 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         _;
     }
 
-  //modifier to check if the sale is active or not
+    /// @dev modifier to check if the sale is active or not
     modifier saleDuration(){
         require(block.timestamp > preSaleStartTime, "Presale: Sale hasn't started");
         require(block.timestamp < preSaleEndTime, "PreSale: Sale has already ended");
         _;
     }
 
-  //modifier to check if the Sale Duration and Locking periods are valid or not
+    /// @dev modifier to check if the Sale Duration and Locking periods are valid or not
     modifier saleValid(
     uint256 _preSaleStartTime, uint256 _preSaleEndTime
     ){
@@ -120,9 +121,13 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         _;
     }
 
-    function setRoundDetails(uint256[] memory _roundID, uint256[] memory _vestingPercent, 
-    uint256[] memory _lockingPeriod)internal{
-        
+    /// @notice Set round details like vesting percent per month, and locking period for different rounds. 
+    /// @dev    Rounds::  0: PS1, 1: PS2, 2:INNOVATION, 3: TEAM, 4:MARKETING, 5: SEED
+    /// @dev    Function is called in the constructor
+    /// @param _roundID Array of Round ID's
+    /// @param _vestingPercent Array of vesting percentage per month for the specific round
+    /// @param _lockingPeriod Array of locking period's for each round
+    function setRoundDetails(uint256[] memory _roundID, uint256[] memory _vestingPercent, uint256[] memory _lockingPeriod) internal {
         require(_roundID.length == _vestingPercent.length, "Redux: Length mismatch");
         require(_lockingPeriod.length == _vestingPercent.length, "Redux: Length mismatch");
         uint256 length = _roundID.length;
@@ -132,9 +137,12 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         }
     }
 
-    function setSaleTokenParams(
-    uint256 _totalTokensforSale, uint256 _rate, uint256 _roundID
-    )external onlyOwner saleStarted{
+    /// @notice Set sale token params when initializing a new round. Will not work if sale is already active.
+    /// @dev    Can be called only twice for the two presale round requirements. Owner needs to approve presale contract to handle said number of tokens
+    /// @param _totalTokensforSale The total tokens for sale in wei
+    /// @param _rate The rate of each token in USD 
+    /// @param _roundID The id for the specific presale round 
+    function setSaleTokenParams(uint256 _totalTokensforSale, uint256 _rate, uint256 _roundID) external onlyOwner saleStarted {
         require(_rate != 0, "PreSale: Invalid Native Currency rate!");
         require(_roundID < 2, "Redux Presale: Round ID should be 0 or 1");
         currentRound = _roundID;
@@ -144,29 +152,34 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         IERC20Metadata(saleToken).safeTransferFrom(msg.sender, address(this), totalTokensforSale);
     }
 
-    function setSalePeriodParams(
-    uint256 _preSaleStartTime,
-    uint256 _preSaleEndTime)
+    /// @notice Set sale period for the ICO
+    /// @dev    Cannot be called if sale is already active
+    /// @param _preSaleStartTime Start time for the sale in unix format
+    /// @param _preSaleEndTime End time for the sale in unix format
+    function setSalePeriodParams(uint256 _preSaleStartTime, uint256 _preSaleEndTime) 
     external onlyOwner saleStarted saleValid(_preSaleStartTime, _preSaleEndTime){
         preSaleStartTime = _preSaleStartTime;
         preSaleEndTime = _preSaleEndTime;
     }
 
+    /// @notice Call when vesting needs to start. Can be called only once
+    /// @dev    Cannot be called if sale has not ended
     function setVestingPeriod() external onlyOwner{
         require(vestingBeginTime == 0, "Redux: Cannot set multiple times");
+        require(preSaleEndTime !=0, "Redux: Sale not started");
+        require(block.timestamp > preSaleEndTime, "Redux: Sale in progress");
         vestingBeginTime = block.timestamp;
+
     }
 
-    // Public view function to calculate amount of sale tokens returned if you buy using "amount" of "token"
-    function getTokenAmount(uint256 amount)
-        external
-        view
-        returns (uint256)
-    {
+    /// @notice Calculate Redux token amount for said BNB amount
+    /// @return Calculated Redux tokens in wei
+    function getTokenAmount(uint256 amount) external view returns (uint256) {
         return amount*(10**saleTokenDec)/rate;
     }
 
-
+    /// @notice Investor calls this to buy Redux tokens for BNB
+    /// @param _isInnovation boolean to denote if this purchase falls under the innovation round
     function buyToken(bool _isInnovation) external payable saleDuration{
         uint256 saleTokenAmt;
 
@@ -194,27 +207,48 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         }
     }
 
-    function getTokensBought(address _user)external view returns(uint256){
+    /// @notice Returns the amount of Redux tokens bought by an investor
+    /// @param  _user The wallet address of the investor
+    /// @return Redux tokens in wei
+    function getTokensBought(address _user) external view returns(uint256) {
         return buyersAmount[_user].totalAmount;
     }
 
-    function getRoundsParticipated(address _user)external view returns(uint256[] memory)
-    {
+    /// @notice Returns the rounds that an investor has been a part of
+    /// @param  _user The wallet address of the investor
+    /// @return Array of round ID's
+    function getRoundsParticipated(address _user) external view returns(uint256[] memory) {
         return buyersAmount[_user].roundsParticipated;
     }
 
+    /// @notice Returns the amount of Redux tokens that an investor purchased in the specific round (denoted by roundID)
+    /// @param  _user The wallet address of the investor
+    /// @param  _roundID The specific Round ID
+    /// @return Redux tokens in wei
     function getTokensPerRound(address _user, uint256 _roundID)external view returns(uint256){
         return buyersAmount[_user].tokensPerRound[_roundID];
     }
 
-
-    function getClaimedTokensPerRound(address _user, uint256 _roundID)external view returns(uint256){
+    /// @notice Returns the amount of Redux tokens that an investor has claimed from a specific round (denoted by roundID)
+    /// @param  _user The wallet address of the investor
+    /// @param  _roundID The specific Round ID
+    /// @return Redux tokens in wei
+    function getClaimedTokensPerRound(address _user, uint256 _roundID) external view returns(uint256) {
         return buyersAmount[_user].tokensClaimed[_roundID];
     }
-    function getMonthlyVestingClaimed(address _user, uint256 _roundID)external view returns(uint256){
+
+    /// @notice Returns the number of month's vesting that has been claimed by a given investor for a given round (denoted by roundID)
+    /// @param  _user The wallet address of the investor
+    /// @param  _roundID The specific Round ID 
+    /// @return Returns an integer (uint)
+    function getMonthlyVestingClaimed(address _user, uint256 _roundID) external view returns(uint256) {
         return buyersAmount[_user].monthlyVestingClaimed[_roundID];
     }
-    function getTotalClaimedTokens(address _user)external view returns(uint256){
+
+    /// @notice Returns the total amount of Redux tokens that an investor has claimed so far from vesting. 
+    /// @param  _user The wallet address of the investor
+    /// @return Redux tokens in wei
+    function getTotalClaimedTokens(address _user) external view returns(uint256) {
         uint256 tokensClaimed;
 
         for(uint256 i = 0; i<6; i++){
@@ -223,6 +257,8 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         return tokensClaimed;
     }
 
+    /// @notice Investor can call this to withdraw their share of tokens that are eligible fro withdrawal 
+    /// @dev Modifier to take care of Reentrancy attacks is included
     function withdrawToken() external nonReentrant{
         uint256 tokensforWithdraw = getAllocation(msg.sender);
         address user = msg.sender;
@@ -257,10 +293,13 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
 
     }
 
-    //function to get allocation available for withdraw
+    /// @notice Get investor's allocation that is available for withdrawal
+    /// @param  _user The wallet address of the investor
+    /// @return Redux tokens in wei
     function getAllocation(address user) public view returns(uint256){
 
-        require(vestingBeginTime != 0, "Redux: Vesting hasn't started");        
+        require(vestingBeginTime != 0, "Redux: Vesting hasn't started for me");    
+
         uint256 timeElapsed = (block.timestamp)-vestingBeginTime;
         uint256 boost;
         uint256 availableAllocation;
@@ -288,6 +327,10 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         return tokensAlloted;
     }
 
+    /// @notice Owner can use this to externally set vesting for different investor's / wallets
+    /// @param  _user Array of wallet addresses
+    /// @param  _amount Array of amounts that need to be vested
+    /// @param  _roundID Round ID in which the vesting falls
     function setExternalAllocation(address[] calldata _user, uint256[] calldata _amount, uint256 _roundID)external onlyOwner{
 
         uint256 totalTokens;
@@ -304,6 +347,13 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
             buyerDetails.tokensPerRound[_roundID] += _amount[i];
             totalTokens += _amount[i];
         }
+        totalTokensAlloc += totalTokens;
         IERC20Metadata(saleToken).safeTransferFrom(msg.sender, address(this), totalTokens);
+    }
+
+    /// @notice Owner can use this to withdraw the leftover, unsold tokens from the ICO
+    function withdrawUnsoldTokens() external saleStarted onlyOwner {
+        uint256 tokens = IERC20Metadata(saleToken).balanceOf(address(this))-(totalTokensSold+totalTokensAlloc);
+        IERC20Metadata(saleToken).safeTransfer(msg.sender, tokens);
     }
 }
