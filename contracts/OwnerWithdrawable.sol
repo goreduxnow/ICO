@@ -16,7 +16,7 @@ contract OwnerWithdrawable is Ownable {
         payable(msg.sender).transfer(_amt);
     }
     /// @notice Get the BNB balance of the presale contract
-    /// @@return Amount of BNB in wei
+    /// @return Amount of BNB in wei
     function getCurrencyBalance() external view returns(uint256){
         return (address(this).balance);
     }
