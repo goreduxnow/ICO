@@ -294,7 +294,7 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
     }
 
     /// @notice Get investor's allocation that is available for withdrawal
-    /// @param  _user The wallet address of the investor
+    /// @param  user The wallet address of the investor
     /// @return Redux tokens in wei
     function getAllocation(address user) public view returns(uint256){
 
