@@ -9,18 +9,18 @@ const hre = require("hardhat");
 const { isCallTrace } = require("hardhat/internal/hardhat-network/stack-traces/message-trace");
 
 async function main() {
-  const Token = await ethers.getContractFactory("Redux");
-  const token = await Token.deploy();
+  //const Token = await ethers.getContractFactory("Redux");
+  //const token = await Token.deploy();
 
-  await token.deployed();
+  //await token.deployed();
 
   const PreSale = await ethers.getContractFactory("Presale");
-  presale = await PreSale.deploy(token.address, [0, 1, 2, 3, 4, 5], [15, 15, 5, 100, 100, 5], [3, 3, 12, 12, 6, 12]);	
+  presale = await PreSale.deploy("0xa2954B5734A9136BF648dcE5BD2f9D2062551Faa", [0, 1, 2, 3, 4, 5], [15, 15, 5, 100, 100, 5], [3, 3, 12, 12, 6, 12]);	
   await presale.deployed();
 
-  console.log(
-    `Token deployed to ${token.address}`
-  );
+  //console.log(
+   // `Token deployed to ${token.address}`
+  //);
 
 
   console.log(
@@ -40,4 +40,4 @@ main().catch((error) => {
 
 // npx hardhat --network BSCTestnet run ./scripts/deploy.js
 // npx hardhat --network BSCTestnet verify 0x272d5291F0a316221B0452020C92Bb68561B196a
-// npx hardhat --network BSCTestnet verify 0x0f64cA33c23bA83Cfa629AC374dDc16f8138f24f --constructor-args scripts/arguments.js
+// npx hardhat --network BSCMainnet verify 0xb5436c61e4dBFf2019f8e95f783D75a7153F274F --constructor-args scripts/arguments.js

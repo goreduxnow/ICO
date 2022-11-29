@@ -356,4 +356,10 @@ contract Presale is OwnerWithdrawable, ReentrancyGuard{
         uint256 tokens = IERC20Metadata(saleToken).balanceOf(address(this))-(totalTokensSold+totalTokensAlloc);
         IERC20Metadata(saleToken).safeTransfer(msg.sender, tokens);
     }
+
+    /// @notice function to change the rate
+    /// @param _rate The new rate 
+    function changeRate(uint256 _rate) external onlyOwner {
+        rate = _rate;
+    }
 }
